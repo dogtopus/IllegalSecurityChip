@@ -6,10 +6,12 @@ import javacard.framework.ISO7816;
 import javacard.framework.ISOException;
 import javacard.framework.JCSystem;
 import javacard.framework.Util;
+import javacard.security.CryptoException;
 import javacard.security.Signature;
 import javacardx.apdu.ExtendedLength;
 
 public class ISCApplet extends Applet implements ExtendedLength {
+	private static final byte[] VERSION = {0x11, 0x1e, (byte) 0x9a, 0x15, (byte) 0xec, 0x01, 0x00};
 	private static final short LEN_TEMP_STATES = (short) 0x3;
 	private static final short LEN_DS4RESP_SIG = JediIdentity.RSA2048_INT_SIZE;
 	// Offsets
@@ -36,28 +38,28 @@ public class ISCApplet extends Applet implements ExtendedLength {
 	private static final byte INS_AUTH_RESET = (byte) 0x48;
 
 	// APDU commands for CLA_CONFIG
-	private static final byte INS_CONFIG_GET_STATUS = (byte) 0x00;
+	private static final byte INS_CONFIG_GET_VERSION = (byte) 0x00;
+	private static final byte INS_CONFIG_GET_STATUS = (byte) 0x01;
 	private static final byte INS_CONFIG_RESET = (byte) 0x0f;
-	// Import public pages
-	private static final byte INS_CONFIG_IMPORT_SERIAL = (byte) 0x10;
-	private static final byte INS_CONFIG_IMPORT_PUB_N = (byte) 0x11;
-	private static final byte INS_CONFIG_IMPORT_PUB_E = (byte) 0x12;
-	private static final byte INS_CONFIG_IMPORT_SIG_ID = (byte) 0x13;
-	// Import private pages
-	private static final byte INS_CONFIG_IMPORT_PRIV_P = (byte) 0x20;
-	private static final byte INS_CONFIG_IMPORT_PRIV_Q = (byte) 0x21;
-	private static final byte INS_CONFIG_IMPORT_PRIV_PQ = (byte) 0x22;
-	private static final byte INS_CONFIG_IMPORT_PRIV_DP1 = (byte) 0x23;
-	private static final byte INS_CONFIG_IMPORT_PRIV_DQ1 = (byte) 0x24;
+	// Import pages
+	private static final byte INS_CONFIG_IMPORT = (byte) 0x10;
 	// Export public pages
-	private static final byte INS_CONFIG_EXPORT_SERIAL = (byte) 0x30;
-	private static final byte INS_CONFIG_EXPORT_PUB_N = (byte) 0x31;
-	private static final byte INS_CONFIG_EXPORT_PUB_E = (byte) 0x32;
-	private static final byte INS_CONFIG_EXPORT_SIG_ID = (byte) 0x33;
+	private static final byte INS_CONFIG_EXPORT = (byte) 0x20;
 	// Destructive operations. Think twice before proceeding!
 	private static final byte INS_CONFIG_GEN_KEYS = (byte) 0xfd;
 	private static final byte INS_CONFIG_ENTER_STEALTH_MODE = (byte) 0xfe;
 	private static final byte INS_CONFIG_NUKE = (byte) 0xff;
+
+	// P1 for import/export. (Export only applicable to type 0X i.e. public pages)
+	private static final byte P1_SERIAL = (byte) 0x00;
+	private static final byte P1_PUB_N = (byte) 0x01;
+	private static final byte P1_PUB_E = (byte) 0x02;
+	private static final byte P1_SIG_ID = (byte) 0x03;
+	private static final byte P1_PRIV_P = (byte) 0x10;
+	private static final byte P1_PRIV_Q = (byte) 0x11;
+	private static final byte P1_PRIV_PQ = (byte) 0x12;
+	private static final byte P1_PRIV_DP1 = (byte) 0x13;
+	private static final byte P1_PRIV_DQ1 = (byte) 0x14;
 
 	private Signature sigChallenge;
 	private final JediIdentity id;
@@ -66,7 +68,16 @@ public class ISCApplet extends Applet implements ExtendedLength {
 	private boolean stealthMode;
 
 	public ISCApplet() {
-		this.sigChallenge = Signature.getInstance(Signature.ALG_RSA_SHA_256_PKCS1_PSS, false);
+		try {
+			this.sigChallenge = Signature.getInstance(Signature.ALG_RSA_SHA_256_PKCS1_PSS, false);
+		} catch (CryptoException e) {
+			// RSA-PSS is not supported
+			if (e.getReason() == CryptoException.NO_SUCH_ALGORITHM) {
+				ISOException.throwIt(ISO7816.SW_FUNC_NOT_SUPPORTED);
+			} else {
+				ISOException.throwIt(ISO7816.SW_UNKNOWN);
+			}
+		}
 		this.id = new JediIdentity();
 		this.tempStates = JCSystem.makeTransientShortArray(LEN_TEMP_STATES, JCSystem.CLEAR_ON_DESELECT);
 		this.signature = JCSystem.makeTransientByteArray(JediIdentity.RSA2048_INT_SIZE, JCSystem.CLEAR_ON_DESELECT);
@@ -167,7 +178,7 @@ public class ISCApplet extends Applet implements ExtendedLength {
 			}
 			if (remaining > 0) {
 				// Copy this chunk
-				Util.arrayCopyNonAtomic(buf, offsetCdata, this.signature, offset, bytes);
+				offset += Util.arrayCopyNonAtomic(buf, offsetCdata, this.signature, offset, bytes);
 				remaining -= bytes;
 			}
 			// Receive next chunk (or discard overflowing data)
@@ -216,8 +227,6 @@ public class ISCApplet extends Applet implements ExtendedLength {
 
 		// Send until we have nothing to send
 		while (remaining > 0) {
-			// Initialize buffer offset counter
-			short bufOffset = 0;
 			// Counter for total number of data written (actual chunk size)
 			short chunkUsed = 0;
 			// Determine chunk size
@@ -228,58 +237,61 @@ public class ISCApplet extends Applet implements ExtendedLength {
 				short copySize = 0;
 				if (offset >= OFFSET_DS4RESP_SIG && offset < OFFSET_DS4RESP_ID_SERIAL) {
 					// Relative offset
-					short relOffset = (short) (OFFSET_DS4RESP_ID_SERIAL - offset);
+					short relOffset = (short) (offset - OFFSET_DS4RESP_SIG);
 
 					// Calculate copy size (total bytes available for chunk or payload size, whichever smaller)
 					copySize = min(chunkFree, LEN_DS4RESP_SIG);
 
 					// Populate the buffer with payload
 					if (this.signatureIsReadProtect()) {
-						Util.arrayFillNonAtomic(buf, bufOffset, copySize, (byte) 0);
+						Util.arrayFillNonAtomic(buf, chunkUsed, copySize, (byte) 0);
 					} else {
-						Util.arrayCopyNonAtomic(this.signature, relOffset, buf, bufOffset, copySize);
+						Util.arrayCopyNonAtomic(this.signature, relOffset, buf, chunkUsed, copySize);
 					}
 				} else if (offset >= OFFSET_DS4RESP_ID_SERIAL && offset < OFFSET_DS4RESP_ID_PUB_N) {
 					// Relative offset
-					short relOffset = (short) (OFFSET_DS4RESP_ID_PUB_N - offset);
+					short relOffset = (short) (offset - OFFSET_DS4RESP_ID_SERIAL);
+					copySize = (short) (JediIdentity.LEN_ID_SERIAL - relOffset);
 
 					// Calculate copy size (total bytes available for chunk or payload size, whichever smaller)
-					copySize = min(chunkFree, JediIdentity.LEN_ID_SERIAL);
+					copySize = min(chunkFree, copySize);
 
 					// Populate the buffer with payload
-					Util.arrayCopyNonAtomic(this.id.getSerialNumber(), relOffset, buf, bufOffset, copySize);
+					Util.arrayCopyNonAtomic(this.id.getSerialNumber(), relOffset, buf, chunkUsed, copySize);
 				} else if (offset >= OFFSET_DS4RESP_ID_PUB_N && offset < OFFSET_DS4RESP_ID_PUB_E) {
 					// Relative offset
-					short relOffset = (short) (OFFSET_DS4RESP_ID_PUB_E - offset);
+					short relOffset = (short) (offset - OFFSET_DS4RESP_ID_PUB_N);
+					copySize = (short) (JediIdentity.LEN_ID_PUB_N - relOffset);
 
 					// Calculate copy size (total bytes available for chunk or payload size, whichever smaller)
-					copySize = min(chunkFree, JediIdentity.LEN_ID_PUB_N);
+					copySize = min(chunkFree, copySize);
 
 					// Populate the buffer with payload
-					Util.arrayCopyNonAtomic(this.id.exportPublicKeyN(), relOffset, buf, bufOffset, copySize);
+					Util.arrayCopyNonAtomic(this.id.exportPublicKeyN(), relOffset, buf, chunkUsed, copySize);
 					this.id.finishExport();
 				} else if (offset >= OFFSET_DS4RESP_ID_PUB_E && offset < OFFSET_DS4RESP_ID_SIG) {
 					// Relative offset
-					short relOffset = (short) (OFFSET_DS4RESP_ID_SIG - offset);
+					short relOffset = (short) (offset - OFFSET_DS4RESP_ID_PUB_E);
+
+					copySize = (short) (JediIdentity.LEN_ID_PUB_E - relOffset);
 
 					// Calculate copy size (total bytes available for chunk or payload size, whichever smaller)
-					copySize = min(chunkFree, JediIdentity.LEN_ID_PUB_E);
+					copySize = min(chunkFree, copySize);
 
 					// Populate the buffer with payload
-					Util.arrayCopyNonAtomic(this.id.exportPublicKeyE(), relOffset, buf, bufOffset, copySize);
+					Util.arrayCopyNonAtomic(this.id.exportPublicKeyE(), relOffset, buf, chunkUsed, copySize);
 					this.id.finishExport();
 				} else if (offset >= OFFSET_DS4RESP_ID_SIG && offset < LEN_DS4RESP) {
 					// Relative offset
-					short relOffset = (short) (LEN_DS4RESP - offset);
+					short relOffset = (short) (offset - OFFSET_DS4RESP_ID_SIG);
+					copySize = (short) (JediIdentity.LEN_ID_SIG - relOffset);
 
 					// Calculate copy size (total bytes available for chunk or payload size, whichever smaller)
-					copySize = min(chunkFree, JediIdentity.LEN_ID_SIG);
+					copySize = min(chunkFree, copySize);
 
 					// Populate the buffer with payload
-					Util.arrayCopyNonAtomic(this.id.getIdSig(), relOffset, buf, bufOffset, copySize);
+					Util.arrayCopyNonAtomic(this.id.getIdSig(), relOffset, buf, chunkUsed, copySize);
 				}
-				// Update buffer offset
-				bufOffset += copySize;
 				// Increment chunk size counter
 				chunkUsed += copySize;
 				// Update free space available for the chunk
@@ -295,6 +307,18 @@ public class ISCApplet extends Applet implements ExtendedLength {
 		}
 	}
 
+	private void processGetVersion(APDU apdu) {
+		byte[] buf = apdu.getBuffer();
+		Util.arrayCopyNonAtomic(VERSION, (short) 0, buf, (short) 0, (short) VERSION.length);
+		apdu.setOutgoingAndSend((short) 0, (short) VERSION.length);
+	}
+
+	private void processGetStatus(APDU apdu) {
+		byte[] buf = apdu.getBuffer();
+		buf[0] = (byte) (this.id.isReady() ? 1 : 0);
+		apdu.setOutgoingAndSend((short) 0, (short) 1);
+	}
+
 	public void process(APDU apdu) throws ISOException {
 		// TODO
 		byte[] buf = apdu.getBuffer();
@@ -307,14 +331,6 @@ public class ISCApplet extends Applet implements ExtendedLength {
 			}
 		}
 		switch (buf[ISO7816.OFFSET_CLA]) {
-//		case ISO7816.CLA_ISO7816:
-//			switch (buf[ISO7816.OFFSET_INS]) {
-//			case ISO7816.INS_SELECT:
-//				break;
-//			default:
-//				ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
-//			}
-//			break;
 		case CLA_AUTH:
 			if (!this.id.isReady()) {
 				ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
@@ -341,6 +357,15 @@ public class ISCApplet extends Applet implements ExtendedLength {
 			}
 			switch (buf[ISO7816.OFFSET_INS]) {
 			// TODO
+			case INS_CONFIG_GET_VERSION:
+				this.processGetVersion(apdu);
+				break;
+			case INS_CONFIG_GET_STATUS:
+				this.processGetStatus(apdu);
+				break;
+			case INS_CONFIG_RESET:
+				this.id.reset();
+				break;
 			case INS_CONFIG_GEN_KEYS:
 				this.id.genKeyPair();
 				break;

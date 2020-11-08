@@ -78,10 +78,10 @@ public class JediIdentity {
 	private final byte[] keyScratchPad;
 
 	public JediIdentity() {
-		this.serialNumber = new byte[(short) 8];
-		this.idSig = new byte[(short) 0x100];
+		this.serialNumber = new byte[LEN_ID_SERIAL];
+		this.idSig = new byte[RSA2048_INT_SIZE];
 		this.tmp = JCSystem.makeTransientShortArray(LEN_TMP, JCSystem.CLEAR_ON_DESELECT);
-		this.keyScratchPad = JCSystem.makeTransientByteArray(JediIdentity.RSA2048_INT_SIZE, JCSystem.CLEAR_ON_DESELECT);
+		this.keyScratchPad = JCSystem.makeTransientByteArray(RSA2048_INT_SIZE, JCSystem.CLEAR_ON_DESELECT);
 		this.cukPub = (RSAPublicKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_PUBLIC, KeyBuilder.LENGTH_RSA_2048, false);
 		this.cukPriv = (RSAPrivateCrtKey) KeyBuilder.buildKey(KeyBuilder.TYPE_RSA_CRT_PRIVATE, KeyBuilder.LENGTH_RSA_2048, false);
 		this.reset();
@@ -136,7 +136,7 @@ public class JediIdentity {
 
 	private short putKeyObject(final byte[] buffer, short offset, short len, short keyType) {
 		short actual;
-		
+
 		// Determine bounds based on object type
 		short bounds = 0;
 		switch (keyType) {
@@ -153,7 +153,7 @@ public class JediIdentity {
 			bounds = JediIdentity.RSA2048_PQ_SIZE;
 			break;
 		default:
-			ISOException.throwIt((short) 0x9c01);
+			ISOException.throwIt((short) 0x6f00);
 			return (short) 0;
 		}
 
@@ -166,7 +166,6 @@ public class JediIdentity {
 
 		short remaining = (short) (bounds - this.getTmpKeyOffset());
 		if (remaining < 0) {
-			ISOException.throwIt((short) 0x9c02);
 			return (short) 0;
 		}
 		if (len > remaining) {
@@ -203,7 +202,7 @@ public class JediIdentity {
 				this.cukPriv.setDQ1(this.keyScratchPad, (short) 0, JediIdentity.RSA2048_PQ_SIZE);
 				break;
 			default:
-				ISOException.throwIt((short) 0x9c01);
+				ISOException.throwIt((short) 0x6f00);
 				return (short) 0;
 			}
 			this.setTmpKeyTypeFlag(KEY_TYPE_UNSPECIFIED);
@@ -301,7 +300,10 @@ public class JediIdentity {
 
 	public final byte[] exportPublicKeyE() {
 		this.setTmpKeyTypeFlag(KEY_TYPE_EXPORT_PUB_E);
-		this.getPublicKey().getExponent(this.keyScratchPad, (short) 0);
+		short len = this.getPublicKey().getExponent(this.keyScratchPad, (short) 0);
+		short offset = (short) (JediIdentity.LEN_ID_PUB_E - len);
+		this.clearScratchPad();
+		this.getPublicKey().getExponent(this.keyScratchPad, offset);
 		return this.keyScratchPad;
 	}
 
@@ -326,5 +328,9 @@ public class JediIdentity {
 	 */
 	public boolean isReady() {
 		return this.cukPriv.isInitialized() && this.cukPub.isInitialized();
+	}
+
+	public short getCurentlyImporting() {
+		return this.getTmpKeyTypeFlag();
 	}
 }
