@@ -16,6 +16,8 @@ from Crypto.PublicKey import RSA
 from Crypto.Signature import pss
 from Crypto.Util.number import bytes_to_long
 
+JEDI_CA_PUBKEY_FINGERPRINT = b'\xe5\xe0\x95\xe6C\xb5h\x8b@\x0cu{LD\xef\xac\xc2\x93aH\xe5\xce\xbdlmA\x0fT\xf1H\x7fI'
+
 AID = bytes.fromhex('111e9a15ec00')
 
 ISC_MAGIC = bytes.fromhex('111e9a15ec')
@@ -133,6 +135,7 @@ class DS4Response(LittleEndianStructure):
         ('sig', c_uint8 * 0x100),
         ('signed_identity', DS4SignedIdentityBlock),
     )
+
 @contextmanager
 def disconnectable(thing):
     try:
@@ -150,26 +153,46 @@ def parse_args():
     p.add_argument('-d', '--debug', action='store_true', help='Print protocol trace.')
     p.add_argument('-y', '--yes', action='store_true', help='Automatically answer yes on confirm.')
 
-    sp_list_readers = sps.add_parser('list-readers',
-                                     help='List available readers')
-    sp_info = sps.add_parser('info',
-                             help='Get applet info')
-    sp_gen_key = sps.add_parser('gen-key',
-                                help='Generate new keys.')
-    sp_is_ready = sps.add_parser('is-ready',
-                                 help='Check whether or not the card is ready.')
-    sp_nuke = sps.add_parser('nuke',
-                             help='Reset the applet to uninitialized state.')
-    sp_test_sign = sps.add_parser('test-sign',
-                                  help='Run the whole challenge-response sequence.')
+    sp = sps.add_parser('list-readers',
+                        help='List available readers')
+
+    sp = sps.add_parser('info',
+                        help='Get applet info')
+
+    sp = sps.add_parser('gen-key',
+                        help='Generate new keys.')
+
+    sp = sps.add_parser('is-ready',
+                        help='Check whether or not the card is ready.')
+
+    sp = sps.add_parser('nuke',
+                        help='Reset the applet to uninitialized state.')
+
+    sp = sps.add_parser('test-sign',
+                        help='Run the whole challenge-response sequence.')
+    sp.add_argument('-c', '--jedi-ca-pubkey',
+                    help='Location of Jedi CA public key (default: jedi.pub)',
+                    default='jedi.pub')
+    sp.add_argument('-i', '--id-verification',
+                    choices=('skip', 'warn', 'strict'),
+                    help='ID verification level. skip: No verification at all. warn: Display verification result but do not panic when verification fails. strict: Panics when verification fails and skips response verification.',
+                    default='warn')
     return p, p.parse_args()
 
 def _ds4id_to_key(ds4id):
-    print('n =', bytes(ds4id.modulus).hex())
-    print('e =', bytes(ds4id.exponent).hex())
     key = RSA.construct((bytes_to_long(bytes(ds4id.modulus)), bytes_to_long(bytes(ds4id.exponent))), consistency_check=True)
     return key
-    
+
+def _load_key_and_check(keyfile, expected_fingerprint):
+    if os.path.isfile(keyfile):
+        with open(keyfile, 'rb') as f:
+            key = RSA.importKey(f.read())
+    else:
+        print('WARNING: Jedi CA does not exist. ID check will not be performed.')
+        return None, False
+    fingerprint_match = SHA256.new(key.exportKey('DER')).digest() == expected_fingerprint
+    return key, fingerprint_match
+
 def _select(conn, aid):
     resp, sw1, sw2 = conn.transmit(APDU(cla=ISOCLA, ins=ISOINS_SELECT, p1=ISOP1_SELECT_BY_DF_NAME, p2=ISOP2_FIRST_RECORD, payload=AID).to_list())
     _check_error(resp, sw1, sw2)
@@ -246,12 +269,24 @@ def do_nuke(p, args):
         _check_error(resp, sw1, sw2)
 
 def do_test_sign(p, args):
+    ca = None
+    ca_pss = None
+    id_verification = args.id_verification
+    if id_verification != 'skip':
+        ca, is_official = _load_key_and_check(args.jedi_ca_pubkey, JEDI_CA_PUBKEY_FINGERPRINT)
+    if ca is None:
+        id_verification = 'skip'
+    else:
+        if not is_official:
+            print('Jedi CA is not official.')
+        ca_pss = pss.new(ca)
+
     with disconnectable(_do_connect_and_select(p, args)) as conn:
         print('Resetting auth handler...')
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.auth, ISCAuthINS.reset, 0x00, 0x00).to_list())
         _check_error(resp, sw1, sw2)
 
-        nonce = b'\x00' * 256
+        nonce = os.urandom(0x100)
         sha_nonce = SHA256.new(nonce)
 
         print(f'Using nonce {nonce.hex()}')
@@ -268,14 +303,30 @@ def do_test_sign(p, args):
             raise ValueError(f'Unexpected response size {len(full_response)} for GET_RESPONSE.')
         response_obj = DS4Response()
         memmove(addressof(response_obj), full_response, sizeof(DS4Response))
+        ds4id = response_obj.signed_identity.identity
+        cuk_pub = _ds4id_to_key(ds4id)
+        print('serial =', bytes(ds4id.serial).hex())
+        print('n =', bytes(ds4id.modulus).hex())
+        print('e =', bytes(ds4id.exponent).hex())
+        print('fp =', SHA256.new(cuk_pub.exportKey('DER')).hexdigest())
+        print()
+        print('Begin verification.')
         # TODO verify the signature
-
+        if id_verification != 'skip':
+            sha_id = SHA256.new(bytes(ds4id))
+            try:
+                ca_pss.verify(sha_id, bytes(response_obj.signed_identity.sig_identity))
+            except ValueError:
+                print('ID NG.')
+                if id_verification == 'strict':
+                    return
+            else:
+                print('ID OK.')
         # Verify the response
-        cuk_pub = _ds4id_to_key(response_obj.signed_identity.identity)
         sig = response_obj.sig
         cuk_pss = pss.new(cuk_pub)
         try:
-            result = cuk_pss.verify(sha_nonce, bytes(sig))
+            cuk_pss.verify(sha_nonce, bytes(sig))
         except ValueError:
             print('Response NG.')
         else:
