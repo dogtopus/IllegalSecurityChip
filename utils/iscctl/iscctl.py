@@ -210,6 +210,9 @@ def parse_args():
     sp.add_argument('-f', '--ds4id-file',
                     help='Path to DS4ID file',
                     required=True)
+
+    sp = sps.add_parser('enter-stealth-mode',
+                        help='Enter stealth mode (disable the configuration interface).')
     return p, p.parse_args()
 
 def _ds4id_to_key(ds4id):
@@ -304,6 +307,9 @@ def do_list_readers(p, args):
 
 def do_applet_info(p, args):
     with disconnectable(_do_connect_and_select(p, args)) as conn:
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.reset, 0x00, 0x00).to_list())
+        _check_error(resp, sw1, sw2)
+
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.get_version, 0x00, 0x00).to_list())
         _check_error(resp, sw1, sw2)
         resp = bytes(resp)
@@ -319,11 +325,17 @@ def do_gen_key(p, args):
         print('Aborted.')
         return
     with disconnectable(_do_connect_and_select(p, args)) as conn:
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.reset, 0x00, 0x00).to_list())
+        _check_error(resp, sw1, sw2)
+
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.gen_keys, 0x00, 0x00).to_list())
         _check_error(resp, sw1, sw2)
 
 def do_is_ready(p, args):
     with disconnectable(_do_connect_and_select(p, args)) as conn:
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.reset, 0x00, 0x00).to_list())
+        _check_error(resp, sw1, sw2)
+
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.get_status, 0x00, 0x00).to_list())
         _check_error(resp, sw1, sw2)
     print(f'Card is {"NOT " if resp[0] == 0x00 else ""}ready')
@@ -362,9 +374,14 @@ def do_test_sign(p, args):
         print(f'Sending nonce...')
 
         nonce_io = io.BytesIO(nonce)
+        all_at_once = args.page_size == 0
         page = 0
+
         while nonce_io.tell() != len(nonce):
-            chunk = nonce_io.read(args.page_size)
+            if all_at_once:
+                chunk = nonce_io.read()
+            else:
+                chunk = nonce_io.read(args.page_size)
             resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.auth, ISCAuthINS.set_challenge, args.page_size, page, payload=chunk).to_list())
             _check_error(resp, sw1, sw2)
             page += 1
@@ -372,7 +389,10 @@ def do_test_sign(p, args):
         chunks = []
         page = 0
         while len(chunks) < sizeof(DS4Response):
-            le = min(sizeof(DS4Response) - len(chunks), args.page_size)
+            if all_at_once:
+                le = sizeof(DS4Response)
+            else:
+                le = min(sizeof(DS4Response) - len(chunks), args.page_size)
             resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.auth, ISCAuthINS.get_response, args.page_size, page, le=le).to_list())
             chunks.extend(resp)
             _check_error(resp, sw1, sw2)
@@ -487,6 +507,16 @@ def do_export_ds4id(p, args):
     with open(f'{args.ds4id_file}.sig', 'wb') as f:
         f.write(ds4id_signed.sig_identity)
 
+def do_enter_stealth_mode(p, args):
+    if not args.yes and input('WARNING: Entering stealth mode will "permanently" disable the configuration interface for the rest of the applet life-cycle. This cannot be undone without reinstalling the applet. Type all capital YES and press Enter to confirm or just press Enter to abort. ').strip() != 'YES':
+        print('Aborted.')
+        return
+    with disconnectable(_do_connect_and_select(p, args)) as conn:
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.reset, 0x00, 0x00).to_list())
+        _check_error(resp, sw1, sw2)
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.enter_stealth_mode, 0x00, 0x00).to_list())
+        _check_error(resp, sw1, sw2)
+
 ACTIONS = {
     'list-readers': do_list_readers,
     'applet-info': do_applet_info,
@@ -496,6 +526,7 @@ ACTIONS = {
     'test-sign': do_test_sign,
     'import-ds4key': do_import_ds4key,
     'export-ds4id': do_export_ds4id,
+    'enter-stealth-mode': do_enter_stealth_mode,
 }
 
 if __name__ == '__main__':
