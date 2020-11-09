@@ -2,6 +2,8 @@
 
 import argparse
 import enum
+import functools
+import io
 import os
 
 from ctypes import *
@@ -155,6 +157,8 @@ def disconnectable(thing):
     finally:
         thing.disconnect()
 
+autobase = functools.partial(int, base=0)
+
 def parse_args():
     p = argparse.ArgumentParser()
     sps = p.add_subparsers(dest='action', required=True)
@@ -189,6 +193,9 @@ def parse_args():
                     choices=('skip', 'warn', 'strict'),
                     help='ID verification level. skip: No verification at all. warn: Display verification result but do not panic when verification fails. strict: Panics when verification fails and skips response verification.',
                     default='warn')
+    sp.add_argument('-p', '--page-size', type=autobase, default=0x80,
+                    help='Page size. Use 0 to send/receive all data with a single request.')
+
     sp = sps.add_parser('import-ds4key',
                         help='Import DS4Key to the card.')
     sp.add_argument('-f', '--ds4key-file',
@@ -347,12 +354,24 @@ def do_test_sign(p, args):
         print(f'Using nonce {nonce.hex()}')
         # TODO support for paging
         print(f'Sending nonce...')
-        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.auth, ISCAuthINS.set_challenge, 0x00, 0x00, payload=nonce).to_list())
-        _check_error(resp, sw1, sw2)
+
+        nonce_io = io.BytesIO(nonce)
+        page = 0
+        while nonce_io.tell() != len(nonce):
+            chunk = nonce_io.read(args.page_size)
+            resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.auth, ISCAuthINS.set_challenge, args.page_size, page, payload=chunk).to_list())
+            _check_error(resp, sw1, sw2)
+            page += 1
         print(f'Receiving response...')
-        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.auth, ISCAuthINS.get_response, 0x00, 0x00, le=sizeof(DS4Response)).to_list())
-        _check_error(resp, sw1, sw2)
-        full_response = bytes(resp)
+        chunks = []
+        page = 0
+        while len(chunks) < sizeof(DS4Response):
+            le = min(sizeof(DS4Response) - len(chunks), args.page_size)
+            resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.auth, ISCAuthINS.get_response, args.page_size, page, le=le).to_list())
+            chunks.extend(resp)
+            _check_error(resp, sw1, sw2)
+            page += 1
+        full_response = bytes(chunks)
 
         if len(full_response) != sizeof(DS4Response):
             raise ValueError(f'Unexpected response size {len(full_response)} for GET_RESPONSE.')
