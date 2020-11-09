@@ -14,6 +14,7 @@ from smartcard.sw.ISO7816_4ErrorChecker import ISO7816_4ErrorChecker
 from Crypto.Hash import SHA256
 from Crypto.PublicKey import RSA
 from Crypto.Signature import pss
+from Crypto.Math.Numbers import Integer
 from Crypto.Util.number import bytes_to_long
 
 JEDI_CA_PUBKEY_FINGERPRINT = b'\xe5\xe0\x95\xe6C\xb5h\x8b@\x0cu{LD\xef\xac\xc2\x93aH\xe5\xce\xbdlmA\x0fT\xf1H\x7fI'
@@ -52,6 +53,17 @@ class ISCConfigINS(enum.IntEnum):
     enter_stealth_mode = 0xfe
     nuke = 0xff
 
+class ISCImportType(enum.IntEnum):
+    serial = 0x80
+    pub_n = 0x01
+    pub_e = 0x02
+    pub_e_compat = 0x83
+    sig_id = 0x04
+    priv_p = 0x10
+    priv_q = 0x11
+    priv_pq = 0x12
+    priv_dp1 = 0x13
+    priv_dq1 = 0x14
 
 class APDU:
     def __init__(self, cla, ins, p1, p2, payload=None, le=0, force_extended=False):
@@ -177,11 +189,54 @@ def parse_args():
                     choices=('skip', 'warn', 'strict'),
                     help='ID verification level. skip: No verification at all. warn: Display verification result but do not panic when verification fails. strict: Panics when verification fails and skips response verification.',
                     default='warn')
+    sp = sps.add_parser('import-ds4key',
+                        help='Import DS4Key to the card.')
+    sp.add_argument('-f', '--ds4key-file',
+                    help='Path to DS4Key file',
+                    required=True)
+    sp.add_argument('--allow-oversized-exponent',
+                    action='store_true',
+                    help='Allow public exponent to be larger than 32-bit. Not all JavaCard implementation supports this so it might not work.')
     return p, p.parse_args()
 
 def _ds4id_to_key(ds4id):
     key = RSA.construct((bytes_to_long(bytes(ds4id.modulus)), bytes_to_long(bytes(ds4id.exponent))), consistency_check=True)
     return key
+
+def _load_ds4key_and_check(ds4keyfile, allow_oversized_e=False):
+    ds4key = DS4FullKeyBlock()
+    oversized_e = False
+    with open(ds4keyfile, 'rb') as f:
+        actual = f.readinto(ds4key)
+    if actual != sizeof(DS4FullKeyBlock):
+        raise ValueError('DS4Key too small.')
+
+    # TODO check signature?
+    n = bytes_to_long(bytes(ds4key.identity.modulus))
+    e = bytes_to_long(bytes(ds4key.identity.exponent))
+    p = bytes_to_long(bytes(ds4key.private_key.p))
+    q = bytes_to_long(bytes(ds4key.private_key.q))
+    dp1 = bytes_to_long(bytes(ds4key.private_key.dp1))
+    dq1 = bytes_to_long(bytes(ds4key.private_key.dq1))
+    pq = bytes_to_long(bytes(ds4key.private_key.pq))
+
+    if e > 0xffffffff:
+        if allow_oversized_e:
+            raise ValueError('Public exponent is oversized')
+        else:
+            oversized_e = True
+
+    d = Integer(e).inverse((p-1) * (q-1))
+    pq_from_pq = Integer(q).inverse(p)
+    dp1_from_pq = Integer(d) % (p-1)
+    dq1_from_pq = Integer(d) % (q-1)
+    if Integer(pq) != pq_from_pq or Integer(dp1) != dp1_from_pq or Integer(dq1) != dq1_from_pq:
+        raise ValueError('Bad key block (CRT factors inconsistent with P and Q)')
+
+    key = RSA.construct((n, e, d, p, q), consistency_check=True)
+    fppub = SHA256.new(key.publickey().exportKey('DER')).digest()
+    fppriv = SHA256.new(key.exportKey('DER')).digest()
+    return ds4key, fppub, fppriv, oversized_e
 
 def _load_key_and_check(keyfile, expected_fingerprint):
     if os.path.isfile(keyfile):
@@ -332,6 +387,50 @@ def do_test_sign(p, args):
         else:
             print('Response OK.')
 
+def do_import_ds4key(p, args):
+    ds4key, fp_pub, fp_priv, oversized_e = _load_ds4key_and_check(args.ds4key_file, args.allow_oversized_exponent)
+    print('fp_pub =', fp_pub.hex())
+    print('fp_priv =', fp_priv.hex())
+
+    if not args.yes and input('WARNING: Any installed keys will be overwritten. Type all capital YES and press Enter to confirm or just press Enter to abort. ').strip() != 'YES':
+        print('Aborted.')
+        return
+    with disconnectable(_do_connect_and_select(p, args)) as conn:
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.reset, 0x00, 0x00).to_list())
+        _check_error(resp, sw1, sw2)
+
+        print('Uploading DS4Key...')
+
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.serial, 0x00, payload=ds4key.identity.serial).to_list())
+        _check_error(resp, sw1, sw2)
+
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.pub_n, 0x00, payload=ds4key.identity.modulus).to_list())
+        _check_error(resp, sw1, sw2)
+
+        if oversized_e:
+            resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.pub_e, 0x00, payload=ds4key.identity.exponent).to_list())
+        else:
+            resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.pub_e_compat, 0x00, payload=ds4key.identity.exponent[-4:]).to_list())
+        _check_error(resp, sw1, sw2)
+
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.sig_id, 0x00, payload=ds4key.sig_identity).to_list())
+        _check_error(resp, sw1, sw2)
+
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.priv_p, 0x00, payload=ds4key.private_key.p).to_list())
+        _check_error(resp, sw1, sw2)
+
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.priv_q, 0x00, payload=ds4key.private_key.q).to_list())
+        _check_error(resp, sw1, sw2)
+
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.priv_pq, 0x00, payload=ds4key.private_key.pq).to_list())
+        _check_error(resp, sw1, sw2)
+
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.priv_dp1, 0x00, payload=ds4key.private_key.dp1).to_list())
+        _check_error(resp, sw1, sw2)
+
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.priv_dq1, 0x00, payload=ds4key.private_key.dq1).to_list())
+        _check_error(resp, sw1, sw2)
+    
 ACTIONS = {
     'list-readers': do_list_readers,
     'info': do_info,
@@ -339,6 +438,7 @@ ACTIONS = {
     'is-ready': do_is_ready,
     'nuke': do_nuke,
     'test-sign': do_test_sign,
+    'import-ds4key': do_import_ds4key,
 }
 
 if __name__ == '__main__':

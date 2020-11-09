@@ -13,17 +13,18 @@ import javacard.security.RSAPublicKey;
 
 public class JediIdentity {
 	private static final byte OFFSET_TMP_KEY = (byte) 0;
-
 	private static final byte OFFSET_FLAG_TMP_KEY_TYPE = (byte) 1;
-	
+
 	private static final byte LEN_TMP = (byte) 2;
 
 	public static final short RSA2048_INT_SIZE = (short) 0x100;
-	private static final short RSA2048_PQ_SIZE = (short) 0x80;
+	public static final short RSA2048_E_SIZE_COMPAT = (short) 0x4;
+	public static final short RSA2048_PQ_SIZE = (short) 0x80;
 
 	public static final short LEN_ID_SERIAL = (short) 0x10;
 	public static final short LEN_ID_PUB_N = RSA2048_INT_SIZE;
 	public static final short LEN_ID_PUB_E = RSA2048_INT_SIZE;
+	public static final short LEN_ID_PUB_E_COMPAT = RSA2048_E_SIZE_COMPAT;
 	public static final short LEN_ID_SIG = RSA2048_INT_SIZE;
 
 //	private static final short OFFSET_ID_SERIAL = (short) 0x0;
@@ -40,17 +41,18 @@ public class JediIdentity {
 //	private static final short LEN_ID = OFFSET_ID_SIG + LEN_ID_SIG;
 //	private static final short LEN_KEY = OFFSET_KEY_DQ1 + RSA2048_PQ_SIZE;
 	
-	private static final short KEY_TYPE_UNSPECIFIED = (short) 0;
-	private static final short KEY_TYPE_PUB_N = (short) 1;
-	private static final short KEY_TYPE_PUB_E = (short) 2;
-	private static final short KEY_TYPE_PUB_SIG = (short) 3;
-	private static final short KEY_TYPE_PRIV_P = (short) 4;
-	private static final short KEY_TYPE_PRIV_Q = (short) 5;
-	private static final short KEY_TYPE_PRIV_PQ = (short) 6;
-	private static final short KEY_TYPE_PRIV_DP1 = (short) 7;
-	private static final short KEY_TYPE_PRIV_DQ1 = (short) 8;
-	private static final short KEY_TYPE_EXPORT_PUB_N = (short) 9;
-	private static final short KEY_TYPE_EXPORT_PUB_E = (short) 10;
+	public static final short KEY_TYPE_UNSPECIFIED = (short) 0;
+	public static final short KEY_TYPE_PUB_N = (short) 1;
+	public static final short KEY_TYPE_PUB_E = (short) 2;
+	public static final short KEY_TYPE_PUB_SIG = (short) 3;
+	public static final short KEY_TYPE_PRIV_P = (short) 4;
+	public static final short KEY_TYPE_PRIV_Q = (short) 5;
+	public static final short KEY_TYPE_PRIV_PQ = (short) 6;
+	public static final short KEY_TYPE_PRIV_DP1 = (short) 7;
+	public static final short KEY_TYPE_PRIV_DQ1 = (short) 8;
+	public static final short KEY_TYPE_EXPORT_PUB_N = (short) 9;
+	public static final short KEY_TYPE_EXPORT_PUB_E = (short) 10;
+	public static final short KEY_TYPE_EXPORT_PUB_E_COMPAT = (short) 12;
 
 	/**
 	 * Serial number of the security chip.
@@ -284,6 +286,11 @@ public class JediIdentity {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PUB_E);
 	}
 	
+	public short putPublicKeyEDirect(final byte[] buffer, short offset, short len) {
+		this.cukPub.setExponent(buffer, offset, len);
+		return len;
+	}
+
 	public short putIdSig(final byte[] buffer, short offset, short len) {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PUB_SIG);
 	}
@@ -298,13 +305,24 @@ public class JediIdentity {
 		return this.keyScratchPad;
 	}
 
+	private final byte[] exportPublicKeyE(short eSize) {
+		short len = this.getPublicKey().getExponent(this.keyScratchPad, (short) 0);
+		short offset = (short) (eSize - len);
+		if (offset > 0) {
+			this.clearScratchPad();
+			this.getPublicKey().getExponent(this.keyScratchPad, offset);
+		}
+		return this.keyScratchPad;
+	}
+
 	public final byte[] exportPublicKeyE() {
 		this.setTmpKeyTypeFlag(KEY_TYPE_EXPORT_PUB_E);
-		short len = this.getPublicKey().getExponent(this.keyScratchPad, (short) 0);
-		short offset = (short) (JediIdentity.LEN_ID_PUB_E - len);
-		this.clearScratchPad();
-		this.getPublicKey().getExponent(this.keyScratchPad, offset);
-		return this.keyScratchPad;
+		return this.exportPublicKeyE(LEN_ID_PUB_E);
+	}
+
+	public final byte[] exportPublicKeyECompat() {
+		this.setTmpKeyTypeFlag(KEY_TYPE_EXPORT_PUB_E_COMPAT);
+		return this.exportPublicKeyE(LEN_ID_PUB_E_COMPAT);
 	}
 
 	public void finishExport() {
@@ -330,7 +348,11 @@ public class JediIdentity {
 		return this.cukPriv.isInitialized() && this.cukPub.isInitialized();
 	}
 
-	public short getCurentlyImporting() {
+	public short getCurentImport() {
 		return this.getTmpKeyTypeFlag();
+	}
+
+	public short getCurrentImportOffset() {
+		return this.getTmpKeyOffset();
 	}
 }
