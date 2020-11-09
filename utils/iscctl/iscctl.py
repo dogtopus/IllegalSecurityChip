@@ -172,7 +172,7 @@ def parse_args():
     sp = sps.add_parser('list-readers',
                         help='List available readers')
 
-    sp = sps.add_parser('info',
+    sp = sps.add_parser('applet-info',
                         help='Get applet info')
 
     sp = sps.add_parser('gen-key',
@@ -204,6 +204,12 @@ def parse_args():
     sp.add_argument('--allow-oversized-exponent',
                     action='store_true',
                     help='Allow public exponent to be larger than 32-bit. Not all JavaCard implementation supports this so it might not work.')
+
+    sp = sps.add_parser('export-ds4id',
+                        help='Export DS4ID and the signature from the card.')
+    sp.add_argument('-f', '--ds4id-file',
+                    help='Path to DS4ID file',
+                    required=True)
     return p, p.parse_args()
 
 def _ds4id_to_key(ds4id):
@@ -296,7 +302,7 @@ def do_list_readers(p, args):
         for i, r in enumerate(readers):
             print(f'#{i}: {str(r)}')
 
-def do_info(p, args):
+def do_applet_info(p, args):
     with disconnectable(_do_connect_and_select(p, args)) as conn:
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.get_version, 0x00, 0x00).to_list())
         _check_error(resp, sw1, sw2)
@@ -385,7 +391,7 @@ def do_test_sign(p, args):
         print('fp =', SHA256.new(cuk_pub.exportKey('DER')).hexdigest())
         print()
         print('Begin verification.')
-        # TODO verify the signature
+        # Verify the signature
         if id_verification != 'skip':
             sha_id = SHA256.new(bytes(ds4id))
             try:
@@ -449,15 +455,47 @@ def do_import_ds4key(p, args):
 
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.priv_dq1, 0x00, payload=ds4key.private_key.dq1).to_list())
         _check_error(resp, sw1, sw2)
-    
+
+def do_export_ds4id(p, args):
+    ds4id_signed = DS4SignedIdentityBlock()
+
+    field_types = (
+        (ISCImportType.serial, sizeof(ds4id_signed.identity.serial)),
+        (ISCImportType.pub_n, sizeof(ds4id_signed.identity.modulus)),
+        (ISCImportType.pub_e, sizeof(ds4id_signed.identity.exponent)),
+        (ISCImportType.sig_id, sizeof(ds4id_signed.sig_identity)),
+    )
+
+    fields = []
+
+    with disconnectable(_do_connect_and_select(p, args)) as conn:
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.reset, 0x00, 0x00).to_list())
+        _check_error(resp, sw1, sw2)
+
+        for type_, le in field_types:
+            resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.export, type_, 0x00, le=le).to_list())
+            fields.extend(resp)
+            _check_error(resp, sw1, sw2)
+
+        if len(fields) != sizeof(DS4SignedIdentityBlock):
+            raise ValueError('Unexpected length for DS4ID block.')
+
+    memmove(addressof(ds4id_signed), bytes(fields), sizeof(DS4SignedIdentityBlock))
+
+    with open(args.ds4id_file, 'wb') as f:
+        f.write(ds4id_signed.identity)
+    with open(f'{args.ds4id_file}.sig', 'wb') as f:
+        f.write(ds4id_signed.sig_identity)
+
 ACTIONS = {
     'list-readers': do_list_readers,
-    'info': do_info,
+    'applet-info': do_applet_info,
     'gen-key': do_gen_key,
     'is-ready': do_is_ready,
     'nuke': do_nuke,
     'test-sign': do_test_sign,
     'import-ds4key': do_import_ds4key,
+    'export-ds4id': do_export_ds4id,
 }
 
 if __name__ == '__main__':
