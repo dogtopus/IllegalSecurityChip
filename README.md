@@ -4,6 +4,8 @@ This is super illegal even without a proper key. Please **DO NOT** use it. Other
 
 -- S** FUDs
 
+(LOL we somehow got mentioned on psxhax https://www.psxhax.com/threads/ps5tools-added-to-ps5-github-repository-by-skfu-invites-contributors.8264/)
+
 ## WTF?
 
 This is a JavaCard applet that emulates the [A7105 security chip](https://gist.github.com/dogtopus/dae307c7773e792150990a06e79583d0) found in PS4 licensed controllers (at APDU level). It signs random challenges (nonce) sent from the host using an on-card RSA 2048 key (DS4Key). When sending the signature back, it also presents some identifying information and the public key (DS4ID) to the host.
