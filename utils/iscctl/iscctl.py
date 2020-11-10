@@ -171,21 +171,15 @@ def parse_args():
     p.add_argument('-y', '--yes', action='store_true', help='Automatically answer yes on confirm.')
 
     sp = sps.add_parser('list-readers',
-                        help='List available readers')
+                        help='List available readers.')
 
     sp = sps.add_parser('applet-info',
-                        help='Get applet info')
-
-    sp = sps.add_parser('gen-key',
-                        help='Generate new keys.')
+                        help='Get applet info.')
 
     sp = sps.add_parser('is-ready',
                         help='Check whether or not the card is ready.')
 
-    sp = sps.add_parser('nuke',
-                        help='Reset the applet to uninitialized state.')
-
-    sp = sps.add_parser('test-sign',
+    sp = sps.add_parser('test-auth',
                         help='Run the whole challenge-response sequence.')
     sp.add_argument('-c', '--jedi-ca-pubkey',
                     help='Location of Jedi CA public key (default: jedi.pub)',
@@ -199,21 +193,38 @@ def parse_args():
 
     sp = sps.add_parser('import-ds4key',
                         help='Import DS4Key to the card.')
-    sp.add_argument('-f', '--ds4key-file',
-                    help='Path to DS4Key file',
-                    required=True)
+    sp.add_argument('ds4key_file',
+                    help='Path to DS4Key file')
     sp.add_argument('--allow-oversized-exponent',
                     action='store_true',
                     help='Allow public exponent to be larger than 32-bit. Not all JavaCard implementation supports this so it might not work.')
 
     sp = sps.add_parser('export-ds4id',
                         help='Export DS4ID and the signature from the card.')
-    sp.add_argument('-f', '--ds4id-file',
-                    help='Path to DS4ID file',
+    sp.add_argument('ds4id_file',
+                    help='Path to DS4ID file')
+
+    sp = sps.add_parser('set-serial',
+                        help='Set the 16 bytes serial number in DS4ID. Doing so will require re-signing the DS4ID.')
+    sp.add_argument('serial',
+                    type=bytes.fromhex,
+                    help='New serial number in hex format (e.g. 000000000000000000010001deadbeef).')
+
+    sp = sps.add_parser('sign-ds4id',
+                        help='Sign DS4ID on card with Jedi CA.')
+    sp.add_argument('-c', '--jedi-ca-privkey',
+                    help='Location of Jedi CA PRIVATE key.',
                     required=True)
+
+    sp = sps.add_parser('gen-key',
+                        help='Generate new keys.')
 
     sp = sps.add_parser('enter-stealth-mode',
                         help='Enter stealth mode (disable the configuration interface).')
+
+    sp = sps.add_parser('nuke',
+                        help='Reset the applet to uninitialized state.')
+
     return p, p.parse_args()
 
 def _ds4id_to_key(ds4id):
@@ -297,7 +308,33 @@ def _do_connect_and_select(p, args):
 
     _select(conn, args.aid)
     return conn
-    
+
+def _do_export_ds4id(conn):
+    ds4id_signed = DS4SignedIdentityBlock()
+
+    field_types = (
+        (ISCImportType.serial, sizeof(ds4id_signed.identity.serial)),
+        (ISCImportType.pub_n, sizeof(ds4id_signed.identity.modulus)),
+        (ISCImportType.pub_e, sizeof(ds4id_signed.identity.exponent)),
+        (ISCImportType.sig_id, sizeof(ds4id_signed.sig_identity)),
+    )
+
+    fields = []
+
+    resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.reset, 0x00, 0x00).to_list())
+    _check_error(resp, sw1, sw2)
+
+    for type_, le in field_types:
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.export, type_, 0x00, le=le).to_list())
+        fields.extend(resp)
+        _check_error(resp, sw1, sw2)
+
+    if len(fields) != sizeof(DS4SignedIdentityBlock):
+        raise ValueError('Unexpected length for DS4ID block.')
+
+    memmove(addressof(ds4id_signed), bytes(fields), sizeof(DS4SignedIdentityBlock))
+    return ds4id_signed
+
 def do_list_readers(p, args):
     readers = scsys.readers()
     if len(readers) == 0:
@@ -349,7 +386,7 @@ def do_nuke(p, args):
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.nuke, 0x00, 0x00).to_list())
         _check_error(resp, sw1, sw2)
 
-def do_test_sign(p, args):
+def do_test_auth(p, args):
     ca = None
     ca_pss = None
     id_verification = args.id_verification
@@ -478,35 +515,38 @@ def do_import_ds4key(p, args):
         _check_error(resp, sw1, sw2)
 
 def do_export_ds4id(p, args):
-    ds4id_signed = DS4SignedIdentityBlock()
-
-    field_types = (
-        (ISCImportType.serial, sizeof(ds4id_signed.identity.serial)),
-        (ISCImportType.pub_n, sizeof(ds4id_signed.identity.modulus)),
-        (ISCImportType.pub_e, sizeof(ds4id_signed.identity.exponent)),
-        (ISCImportType.sig_id, sizeof(ds4id_signed.sig_identity)),
-    )
-
-    fields = []
-
     with disconnectable(_do_connect_and_select(p, args)) as conn:
-        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.reset, 0x00, 0x00).to_list())
-        _check_error(resp, sw1, sw2)
-
-        for type_, le in field_types:
-            resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.export, type_, 0x00, le=le).to_list())
-            fields.extend(resp)
-            _check_error(resp, sw1, sw2)
-
-        if len(fields) != sizeof(DS4SignedIdentityBlock):
-            raise ValueError('Unexpected length for DS4ID block.')
-
-    memmove(addressof(ds4id_signed), bytes(fields), sizeof(DS4SignedIdentityBlock))
+        ds4id_signed = _do_export_ds4id(conn)
 
     with open(args.ds4id_file, 'wb') as f:
         f.write(ds4id_signed.identity)
     with open(f'{args.ds4id_file}.sig', 'wb') as f:
         f.write(ds4id_signed.sig_identity)
+
+def do_set_serial(p, args):
+    if len(args.serial) != 16:
+        raise ValueError('Serial number is not 16 bytes long.')
+
+    with disconnectable(_do_connect_and_select(p, args)) as conn:
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.serial, 0x00, payload=args.serial).to_list())
+        _check_error(resp, sw1, sw2)
+
+def do_sign_ds4id(p, args):
+    ca, _ = _load_key_and_check(args.jedi_ca_privkey, JEDI_CA_PUBKEY_FINGERPRINT)
+    ca_pss = pss.new(ca)
+    if not ca_pss.can_sign():
+        raise TypeError('Jedi CA private key not present in the key file.')
+
+    with disconnectable(_do_connect_and_select(p, args)) as conn:
+        print('Exporting DS4ID from card...')
+        ds4id_signed = _do_export_ds4id(conn)
+
+        sha_id = SHA256.new(bytes(ds4id_signed.identity))
+        sig = ca_pss.sign(sha_id)
+
+        print('Importing new signature...')
+        resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.sig_id, 0x00, payload=sig).to_list())
+        _check_error(resp, sw1, sw2)
 
 def do_enter_stealth_mode(p, args):
     if not args.yes and input('WARNING: Entering stealth mode will "permanently" disable the configuration interface for the rest of the applet life-cycle. This cannot be undone without reinstalling the applet. Type all capital YES and press Enter to confirm or just press Enter to abort. ').strip() != 'YES':
@@ -521,13 +561,15 @@ def do_enter_stealth_mode(p, args):
 ACTIONS = {
     'list-readers': do_list_readers,
     'applet-info': do_applet_info,
-    'gen-key': do_gen_key,
     'is-ready': do_is_ready,
-    'nuke': do_nuke,
-    'test-sign': do_test_sign,
+    'test-auth': do_test_auth,
     'import-ds4key': do_import_ds4key,
     'export-ds4id': do_export_ds4id,
+    'set-serial': do_set_serial,
+    'sign-ds4id': do_sign_ds4id,
+    'gen-key': do_gen_key,
     'enter-stealth-mode': do_enter_stealth_mode,
+    'nuke': do_nuke,
 }
 
 if __name__ == '__main__':
