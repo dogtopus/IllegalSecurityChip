@@ -87,7 +87,7 @@ public class ISCApplet extends Applet implements ExtendedLength {
 	public static void install(byte[] bArray, short bOffset, byte bLength)
 			throws ISOException {
 		ISCApplet app = new ISCApplet();
-		app.register(bArray, bOffset, bLength);
+		app.register(bArray, (short) (bOffset + 1), bArray[bOffset]);
 	}
 
 	/**
