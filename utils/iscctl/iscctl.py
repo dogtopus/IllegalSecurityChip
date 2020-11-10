@@ -166,6 +166,7 @@ def parse_args():
     mex_reader = p.add_mutually_exclusive_group()
     mex_reader.add_argument('-r', '--reader-index', type=int, dest='reader', default=None, metavar='IDX', help='Reader index shown on list-readers.')
     mex_reader.add_argument('-n', '--reader-name', dest='reader', default=None, metavar='NAME', help='Reader name (can be partial).')
+    p.add_argument('-a', '--aid', type=bytes.fromhex, default=AID, help='Custom AID.')
     p.add_argument('-d', '--debug', action='store_true', help='Print protocol trace.')
     p.add_argument('-y', '--yes', action='store_true', help='Automatically answer yes on confirm.')
 
@@ -265,7 +266,7 @@ def _load_key_and_check(keyfile, expected_fingerprint):
     return key, fingerprint_match
 
 def _select(conn, aid):
-    resp, sw1, sw2 = conn.transmit(APDU(cla=ISOCLA, ins=ISOINS_SELECT, p1=ISOP1_SELECT_BY_DF_NAME, p2=ISOP2_FIRST_RECORD, payload=AID).to_list())
+    resp, sw1, sw2 = conn.transmit(APDU(cla=ISOCLA, ins=ISOINS_SELECT, p1=ISOP1_SELECT_BY_DF_NAME, p2=ISOP2_FIRST_RECORD, payload=aid).to_list())
     _check_error(resp, sw1, sw2)
 
 def _do_connect_and_select(p, args):
@@ -294,7 +295,7 @@ def _do_connect_and_select(p, args):
         conn.addObserver(observer)
     conn.connect()
 
-    _select(conn, AID)
+    _select(conn, args.aid)
     return conn
     
 def do_list_readers(p, args):
