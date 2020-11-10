@@ -328,51 +328,51 @@ public class ISCApplet extends Applet implements ExtendedLength {
 		short bytes = apdu.setIncomingAndReceive();
 		short offsetCdata = apdu.getOffsetCdata();
 		while (bytes > 0) {
-		    switch (importType) {
-		    case P1_SERIAL:
-		    	if (total >= JediIdentity.LEN_ID_SERIAL && bytes >= JediIdentity.LEN_ID_SERIAL) {
-		    		this.id.putSerialNumber(buf, offsetCdata, JediIdentity.LEN_ID_SERIAL);
-		    		return;
-		    	} else {
-		    		ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-		    	}
-		    	break;
-		    case P1_PUB_N:
-		    	this.id.putPublicKeyN(buf, offsetCdata, bytes);
-		    	break;
-		    case P1_PUB_E:
-		    	this.id.putPublicKeyE(buf, offsetCdata, bytes);
-		    	break;
-		    case P1_PUB_E_COMPAT:
-		    	if (total >= JediIdentity.LEN_ID_PUB_E_COMPAT && bytes >= JediIdentity.LEN_ID_PUB_E_COMPAT) {
-		    		this.id.putPublicKeyEDirect(buf, offsetCdata, JediIdentity.LEN_ID_PUB_E_COMPAT);
-		    		return;
-		    	} else {
-		    		ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
-		    	}
-		    	break;
-		    case P1_SIG_ID:
-		    	this.id.putIdSig(buf, offsetCdata, bytes);
-		    	break;
-		    case P1_PRIV_P:
-		    	this.id.putPrivateKeyP(buf, offsetCdata, bytes);
-		    	break;
-		    case P1_PRIV_Q:
-		    	this.id.putPrivateKeyQ(buf, offsetCdata, bytes);
-		    	break;
-		    case P1_PRIV_PQ:
-		    	this.id.putPrivateKeyPQ(buf, offsetCdata, bytes);
-		    	break;
-		    case P1_PRIV_DP1:
-		    	this.id.putPrivateKeyDP1(buf, offsetCdata, bytes);
-		    	break;
-		    case P1_PRIV_DQ1:
-		    	this.id.putPrivateKeyDQ1(buf, offsetCdata, bytes);
-		    	break;
-		    default:
-		    	ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
-		    	return;
-            }
+			switch (importType) {
+			case P1_SERIAL:
+				if (total >= JediIdentity.LEN_ID_SERIAL && bytes >= JediIdentity.LEN_ID_SERIAL) {
+					this.id.putSerialNumber(buf, offsetCdata, JediIdentity.LEN_ID_SERIAL);
+					return;
+				} else {
+					ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+				}
+				break;
+			case P1_PUB_N:
+				this.id.putPublicKeyN(buf, offsetCdata, bytes);
+				break;
+			case P1_PUB_E:
+				this.id.putPublicKeyE(buf, offsetCdata, bytes);
+				break;
+			case P1_PUB_E_COMPAT:
+				if (total >= JediIdentity.LEN_ID_PUB_E_COMPAT && bytes >= JediIdentity.LEN_ID_PUB_E_COMPAT) {
+					this.id.putPublicKeyEDirect(buf, offsetCdata, JediIdentity.LEN_ID_PUB_E_COMPAT);
+					return;
+				} else {
+					ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+				}
+				break;
+			case P1_SIG_ID:
+				this.id.putIdSig(buf, offsetCdata, bytes);
+				break;
+			case P1_PRIV_P:
+				this.id.putPrivateKeyP(buf, offsetCdata, bytes);
+				break;
+			case P1_PRIV_Q:
+				this.id.putPrivateKeyQ(buf, offsetCdata, bytes);
+				break;
+			case P1_PRIV_PQ:
+				this.id.putPrivateKeyPQ(buf, offsetCdata, bytes);
+				break;
+			case P1_PRIV_DP1:
+				this.id.putPrivateKeyDP1(buf, offsetCdata, bytes);
+				break;
+			case P1_PRIV_DQ1:
+				this.id.putPrivateKeyDQ1(buf, offsetCdata, bytes);
+				break;
+			default:
+				ISOException.throwIt(ISO7816.SW_WRONG_P1P2);
+				return;
+			}
 			// Receive next chunk (or discard overflowing data)
 			bytes = apdu.receiveBytes(offsetCdata);
 		}
