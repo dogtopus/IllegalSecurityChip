@@ -50,6 +50,8 @@ pipenv run ./iscctl.py --help
 
 Refer to the built-in help for detailed usage.
 
+**NOTE**: This applet does not support atomic operations. That is, interrupting all operations that write data to the card (i.e. updating DS4ID/DS4Key and any of their parts) can corrupt the data and make the applet unusable. In this case you might need to run `nuke` command or reinstantiate the applet via GlobalPlatform. All data saved on the card that belong to this applet will be deleted permanently.
+
 #### Generating keys on-card
 
 ```sh
