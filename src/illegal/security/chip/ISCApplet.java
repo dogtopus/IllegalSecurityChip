@@ -77,6 +77,9 @@ public class ISCApplet extends Applet implements ExtendedLength {
 			} else {
 				ISOException.throwIt(ISO7816.SW_UNKNOWN);
 			}
+			// Satisfy javac since it doesn't like ISOException :(.
+			// This should never get executed.
+			throw (e);
 		}
 		this.id = new JediIdentity();
 		this.tempStates = JCSystem.makeTransientShortArray(LEN_TEMP_STATES, JCSystem.CLEAR_ON_DESELECT);
