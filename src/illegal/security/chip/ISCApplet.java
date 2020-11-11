@@ -61,7 +61,7 @@ public class ISCApplet extends Applet implements ExtendedLength {
 	private static final byte P1_PRIV_DP1 = (byte) 0x13;
 	private static final byte P1_PRIV_DQ1 = (byte) 0x14;
 
-	private Signature sigChallenge;
+	private final Signature sigChallenge;
 	private final JediIdentity id;
 	private final short[] tempStates;
 	private final byte[] signature;
