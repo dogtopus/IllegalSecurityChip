@@ -249,7 +249,7 @@ def _load_ds4key_and_check(ds4keyfile, allow_oversized_e=False):
     pq = bytes_to_long(bytes(ds4key.private_key.pq))
 
     if e > 0xffffffff:
-        if allow_oversized_e:
+        if not allow_oversized_e:
             raise ValueError('Public exponent is oversized')
         else:
             oversized_e = True
