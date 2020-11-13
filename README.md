@@ -64,6 +64,8 @@ pipenv run ./iscctl.py gen-key
 pipenv run ./iscctl.py import-ds4key <path-to-ds4key-file>
 ```
 
+**NOTE**: For those who are curious, DS4Key is basically the same format as `jedi_cert.bin`. Speaking more and the "Illegal" word in our name will no longer be a joke ;-).
+
 #### Testing authentication
 
 ```sh
