@@ -74,7 +74,7 @@ pipenv run ./iscctl.py import-ds4key <path-to-ds4key-file>
 pipenv run ./iscctl.py test-auth [-c path-to-ca] [-p page-size]
 ```
 
-This command should also work on A7105 security chip given proper bridge hardware between PC/SC over USB (or other protocol over other link supported by Microsoft Smart Card Base or pscslite) and NXP SCI2C.
+This command should also work on A7105 security chip given proper bridge hardware between PC/SC over USB (or other protocol over other link supported by Microsoft Smart Card Base or pcsclite) and NXP SCI2C.
 
 If `page-size` is 0, iscctl will try to send/receive the whole challenge/response block in one single extended length APDU. Otherwise it will send/receive in chunks of `page-size` bytes. It is unknown whether extended length APDU is actually supported by A7105 security chip so be careful when enabling this on A7105. `page-size` is set to 0x80 by default.
 
