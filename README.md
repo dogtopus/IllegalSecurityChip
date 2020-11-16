@@ -18,6 +18,8 @@ The card must satisfy all of the following in order to be able to install and ru
 
 - JavaCard API >= 3.0.1 (for `Signature.ALG_RSA_SHA_256_PKCS1_PSS`)
 - Properly implements `Signature.ALG_RSA_SHA_256_PKCS1_PSS` (Rare! Most random 3.0.1+ cards don't have this!)
+  - Applet installation will fail with random error code (e.g. Applet installation error, unspecified error, condition not satisfied, or the "intended error code" function not supported) depending on the JavaCard implementation if this is not supported.
+  - If the card does not support RSA 2048, it might fail with the same "function not supported". However this is much rarer (like who tf still make JavaCards that don't support RSA 2048 in 2020).
 - Approx. 512 bytes of transient memory. (Can be shrunk to just approx. 256 by merging the buffer used in `JediIdentity` with the top-level applet one)
 
 The only card I came across that has `Signature.ALG_RSA_SHA_256_PKCS1_PSS` implemented is J3H145, which seems to run JCOP 3.x. However I believe that JCOP 2.4.2 cards like J2D081 should also work since the original A7105 security chip seem to run the exact same OS and also conveniently offers JavaCard API 3.0.1.
