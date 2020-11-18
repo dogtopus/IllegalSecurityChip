@@ -211,10 +211,12 @@ def parse_args():
                     help='New serial number in hex format (e.g. 000000000000000000010001deadbeef).')
 
     sp = sps.add_parser('sign-ds4id',
-                        help='Sign DS4ID on card with Jedi CA.')
-    sp.add_argument('-c', '--jedi-ca-privkey',
-                    help='Location of Jedi CA PRIVATE key.',
-                    required=True)
+                        help='Sign DS4ID on card with Jedi CA or upload existing signature binary.')
+    mex = sp.add_mutually_exclusive_group(required=True)
+    mex.add_argument('-c', '--jedi-ca-privkey',
+                    help='Location of Jedi CA PRIVATE key.')
+    mex.add_argument('-s', '--sig-binary',
+                    help='Location of signature binary file.')
 
     sp = sps.add_parser('gen-key',
                         help='Generate new keys.')
@@ -532,24 +534,34 @@ def do_set_serial(p, args):
         _check_error(resp, sw1, sw2)
 
 def do_sign_ds4id(p, args):
-    ca, _ = _load_key_and_check(args.jedi_ca_privkey, JEDI_CA_PUBKEY_FINGERPRINT)
-    ca_pss = pss.new(ca)
-    if not ca_pss.can_sign():
-        raise TypeError('Jedi CA private key not present in the key file.')
+    ca_pss = None
+
+    if args.jedi_ca_privkey is not None:
+        ca, _ = _load_key_and_check(args.jedi_ca_privkey, JEDI_CA_PUBKEY_FINGERPRINT)
+        ca_pss = pss.new(ca)
+        if not ca_pss.can_sign():
+            raise TypeError('Jedi CA private key not present in the key file.')
 
     with disconnectable(_do_connect_and_select(p, args)) as conn:
-        print('Exporting DS4ID from card...')
-        ds4id_signed = _do_export_ds4id(conn)
+        if ca_pss is not None:
+            print('Exporting DS4ID from card...')
+            ds4id_signed = _do_export_ds4id(conn)
 
-        sha_id = SHA256.new(bytes(ds4id_signed.identity))
-        sig = ca_pss.sign(sha_id)
+            sha_id = SHA256.new(bytes(ds4id_signed.identity))
+            sig = ca_pss.sign(sha_id)
+        else:
+            assert args.sig_binary is not None
+            with open(args.sig_binary, 'rb') as f:
+                sig = f.read()
+                if len(sig) != 0x100:
+                    raise TypeError('Wrong signature file size.')
 
         print('Importing new signature...')
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.import_, ISCImportType.sig_id, 0x00, payload=sig).to_list())
         _check_error(resp, sw1, sw2)
 
 def do_enter_stealth_mode(p, args):
-    if not args.yes and input('WARNING: Entering stealth mode will "permanently" disable the configuration interface for the rest of the applet life-cycle. This cannot be undone without reinstalling the applet. Type all capital YES and press Enter to confirm or just press Enter to abort. ').strip() != 'YES':
+    if not args.yes and input('WARNING: Entering stealth mode will permanently disable the configuration interface for the rest of the applet life-cycle. This cannot be undone without reinstalling the applet. Type all capital YES and press Enter to confirm or just press Enter to abort. ').strip() != 'YES':
         print('Aborted.')
         return
     with disconnectable(_do_connect_and_select(p, args)) as conn:
