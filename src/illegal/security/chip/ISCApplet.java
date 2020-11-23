@@ -11,7 +11,7 @@ import javacard.security.Signature;
 import javacardx.apdu.ExtendedLength;
 
 public class ISCApplet extends Applet implements ExtendedLength {
-	private static final byte[] VERSION = {0x11, 0x1e, (byte) 0x9a, 0x15, (byte) 0xec, 0x01, 0x00};
+	private static final byte[] VERSION = {0x11, 0x1e, (byte) 0x9a, 0x15, (byte) 0xec, 0x01, 0x01, 0x01, 0x01, 0x04};
 	private static final short LEN_TEMP_STATES = (short) 0x1;
 	private static final short LEN_DS4RESP_SIG = JediIdentity.RSA2048_INT_SIZE;
 	// Offsets

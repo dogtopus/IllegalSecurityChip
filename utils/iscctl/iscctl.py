@@ -32,6 +32,10 @@ ISOINS_SELECT = 0xa4
 ISOP1_SELECT_BY_DF_NAME = 0x04
 ISOP2_FIRST_RECORD = 0x04
 
+class ISCAuthProtocol(enum.IntEnum):
+    ps4 = 0x4
+
+
 class ISCCLA(enum.IntEnum):
     auth = 0x80
     config = 0x90
@@ -353,12 +357,24 @@ def do_applet_info(p, args):
         resp, sw1, sw2 = conn.transmit(APDU(ISCCLA.config, ISCConfigINS.get_version, 0x00, 0x00).to_list())
         _check_error(resp, sw1, sw2)
         resp = bytes(resp)
-    if len(resp) != 7:
+    if len(resp) < len(ISC_MAGIC) + 2:
         raise ValueError(f'Unexpected response size {len(resp)} for GET_VERSION. Wrong applet?')
     elif resp[:len(ISC_MAGIC)] != ISC_MAGIC:
         raise ValueError(f'Invalid magic for GET_VERSION response. Wrong applet?')
+    config_protocol_version = (resp[len(ISC_MAGIC)], resp[len(ISC_MAGIC)+1])
+    if config_protocol_version == (1, 0):
+        applet_version = (1, 0)
+        auth_protocol_type = ISCAuthProtocol.ps4
+    elif config_protocol_version == (1, 1):
+        applet_version = (resp[len(ISC_MAGIC)+2], resp[len(ISC_MAGIC)+3])
+        auth_protocol_type = ISCAuthProtocol(resp[len(ISC_MAGIC)+4])
     else:
-        print(f'Found IllegalSecurityChip applet version {resp[len(ISC_MAGIC)]}.{resp[len(ISC_MAGIC)+1]}')
+        print(f'WARNING: Unsupported protocol version {config_protocol_version[0]}.{config_protocol_version[1]}. Things might break.')
+        applet_version = (resp[len(ISC_MAGIC)+2], resp[len(ISC_MAGIC)+3])
+        auth_protocol_type = ISCAuthProtocol(resp[len(ISC_MAGIC)+4])
+    print(f'Found IllegalSecurityChip applet version {applet_version[0]}.{applet_version[1]}')
+    print(f'Config protocol version: {config_protocol_version[0]}.{config_protocol_version[1]}')
+    print(f'Auth protocol type: {auth_protocol_type.name}')
 
 def do_gen_key(p, args):
     if not args.yes and input('WARNING: Old keys will be overwritten. Type all capital YES and press Enter to confirm or just press Enter to abort. ').strip() != 'YES':
