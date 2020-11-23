@@ -21,7 +21,7 @@ from Crypto.Util.number import bytes_to_long
 
 JEDI_CA_PUBKEY_FINGERPRINT = b'\xe5\xe0\x95\xe6C\xb5h\x8b@\x0cu{LD\xef\xac\xc2\x93aH\xe5\xce\xbdlmA\x0fT\xf1H\x7fI'
 
-AID = bytes.fromhex('111e9a15ec00')
+AID = bytes.fromhex('f50111e9a15ec400')
 
 ISC_MAGIC = bytes.fromhex('111e9a15ec')
 
