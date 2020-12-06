@@ -36,6 +36,8 @@ Devices that might work but are untested:
 - J2D081 (SIM cut) from Aliexpress (if properly pre-personalized which they don't always do. Always ask!) or [Futako](https://www.javacardsdk.com/product/j2d081sim2/)
 - [Fidesmo Card v1.0](https://shop.fidesmo.com/products/fidesmo-card) (J3D145 NFC only) and [Fidesmo Card v2.0](https://shop.fidesmo.com/products/fidesmo-card-2-0) (J3H145 NFC only)
 - NXP A710xCG (e.g. on [Digi-key](https://www.digikey.com/en/products/detail/nxp-usa-inc/A7101CGTK2-T0B040X/7645426))
+- G\&D SmartCafe Expert 7.0 Card/Security Dongle
+  - https://www.commoncriteriaportal.org/files/epfiles/1028b_pdf.pdf section 8.1.1.2, FCS\_COP.1.1/RSA-CRT-SIGN: "The TSF shall perform signature generation in accordance with a specified cryptographic algorithm RSA-CRT and cryptographic key sizes 512 up to 4096 bit that meet the following: scheme 1 of \[ISO9796-2\] chapter 8, \[RSA\] (RSASSAPKCS1-v15) chapter 8, **\[RSASSA-PSS\]** and \[RSA-SHA-RFC2409\].")
 
 ## Building and Usage
 
