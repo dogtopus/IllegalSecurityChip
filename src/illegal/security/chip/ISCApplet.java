@@ -11,6 +11,8 @@ import javacard.security.Signature;
 import javacardx.apdu.ExtendedLength;
 
 public class ISCApplet extends Applet implements ExtendedLength {
+	// The version string. Format is 111e9a15ec + short applet_version + short protocol_version + byte applet_type.
+	// applet_type 0x04 means PS4.
 	private static final byte[] VERSION = {0x11, 0x1e, (byte) 0x9a, 0x15, (byte) 0xec, 0x01, 0x01, 0x01, 0x01, 0x04};
 	private static final short LEN_TEMP_STATES = (short) 0x1;
 	private static final short LEN_DS4RESP_SIG = JediIdentity.RSA2048_INT_SIZE;
@@ -36,6 +38,12 @@ public class ISCApplet extends Applet implements ExtendedLength {
 	private static final byte INS_AUTH_RESET = (byte) 0x48;
 
 	// APDU commands for CLA_CONFIG
+	// NOTE: Odd INSes had special meaning in the past (i.e. pre-90s cards) but newer cards
+	// that support javacard 3.0.1 shouldn't have this limitation. Therefore it's safe to
+	// use odd INSes here.
+	//
+	// https://stackoverflow.com/questions/30162045/iso7816-odd-ins-codes
+	// General management
 	private static final byte INS_CONFIG_GET_VERSION = (byte) 0x00;
 	private static final byte INS_CONFIG_GET_STATUS = (byte) 0x01;
 	private static final byte INS_CONFIG_RESET = (byte) 0x0f;
@@ -102,14 +110,28 @@ public class ISCApplet extends Applet implements ExtendedLength {
 		Util.arrayFillNonAtomic(this.signature, (short) 0, (short) this.signature.length, (byte) 0);
 	}
 
+	/**
+	 * Returns the signature buffer's read protection status.
+	 * @return Whether or not read protection is enabled.
+	 */
 	private boolean signatureIsReadProtect() {
 		return this.tempStates[OFFSET_TS_SIG_READ_PROT] != 0;
 	}
 
+	/**
+	 * Sets the signature buffer's read protection status.
+	 * @param val New state.
+	 */
 	private void signatureSetReadProtect(boolean val) {
 		this.tempStates[OFFSET_TS_SIG_READ_PROT] = (short) (val ? 1 : 0);
 	}
 
+	/**
+	 * Returns the smaller one of the 2 numbers.
+	 * @param a One number.
+	 * @param b Another number.
+	 * @return The smaller number.
+	 */
 	private static short min(short a, short b) {
 		if (a > b) {
 			return b;
@@ -118,6 +140,11 @@ public class ISCApplet extends Applet implements ExtendedLength {
 		}
 	}
 
+	/**
+	 * Reset the authenticator.
+	 * @param apdu APDU context. Not used here.
+	 * @throws ISOException
+	 */
 	private void processAuthReset(APDU apdu) throws ISOException {
 		this.reset();
 	}
@@ -306,18 +333,30 @@ public class ISCApplet extends Applet implements ExtendedLength {
 		}
 	}
 
+	/**
+	 * Handles the request of Config.GetVersion. Returns the applet version and type.
+	 * @param apdu The APDU context.
+	 */
 	private void processGetVersion(APDU apdu) {
 		byte[] buf = apdu.getBuffer();
 		Util.arrayCopyNonAtomic(VERSION, (short) 0, buf, (short) 0, (short) VERSION.length);
 		apdu.setOutgoingAndSend((short) 0, (short) VERSION.length);
 	}
 
+	/**
+	 * Handles the request of Config.GetStatus. Returns the personalization status of the applet.
+	 * @param apdu The APDU context.
+	 */
 	private void processGetStatus(APDU apdu) {
 		byte[] buf = apdu.getBuffer();
 		buf[0] = (byte) (this.id.isReady() ? 1 : 0);
 		apdu.setOutgoingAndSend((short) 0, (short) 1);
 	}
 
+	/**
+	 * Handles the request of Config.Import. Imports a public or private object over APDU.
+	 * @param apdu The APDU context.
+	 */
 	private void processImport(APDU apdu) {
 		byte[] buf = apdu.getBuffer();
 		byte importType;
@@ -381,6 +420,10 @@ public class ISCApplet extends Applet implements ExtendedLength {
 		}
 	}
 
+	/**
+	 * Handles the request of Config.Export. Exports a public object over APDU.
+	 * @param apdu The APDU context.
+	 */
 	private void processExport(APDU apdu) {
 		byte[] buf = apdu.getBuffer();
 

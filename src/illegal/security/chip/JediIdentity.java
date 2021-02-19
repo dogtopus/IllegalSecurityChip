@@ -26,20 +26,6 @@ public class JediIdentity {
 	public static final short LEN_ID_PUB_E = RSA2048_INT_SIZE;
 	public static final short LEN_ID_PUB_E_COMPAT = RSA2048_E_SIZE_COMPAT;
 	public static final short LEN_ID_SIG = RSA2048_INT_SIZE;
-
-//	private static final short OFFSET_ID_SERIAL = (short) 0x0;
-//	private static final short OFFSET_ID_PUB_N = OFFSET_ID_SERIAL + LEN_ID_SERIAL;
-//	private static final short OFFSET_ID_PUB_E = OFFSET_ID_PUB_N + LEN_ID_PUB_N;
-//	private static final short OFFSET_ID_SIG = OFFSET_ID_PUB_E + LEN_ID_PUB_E;
-//	
-//	private static final short OFFSET_KEY_P = (short) 0x0;
-//	private static final short OFFSET_KEY_Q = OFFSET_KEY_P + RSA2048_PQ_SIZE;
-//	private static final short OFFSET_KEY_PQ = OFFSET_KEY_Q + RSA2048_PQ_SIZE;
-//	private static final short OFFSET_KEY_DP1 = OFFSET_KEY_PQ + RSA2048_PQ_SIZE;
-//	private static final short OFFSET_KEY_DQ1 = OFFSET_KEY_DP1 + RSA2048_PQ_SIZE;
-//
-//	private static final short LEN_ID = OFFSET_ID_SIG + LEN_ID_SIG;
-//	private static final short LEN_KEY = OFFSET_KEY_DQ1 + RSA2048_PQ_SIZE;
 	
 	public static final short KEY_TYPE_UNSPECIFIED = (short) 0;
 	public static final short KEY_TYPE_PUB_N = (short) 1;
@@ -136,7 +122,16 @@ public class JediIdentity {
 		Util.arrayFillNonAtomic(this.keyScratchPad, (short) 0, (short) this.keyScratchPad.length, (byte) 0);
 	}
 
-	private short putKeyObject(final byte[] buffer, short offset, short len, short keyType) {
+	/**
+	 * Import a single key object. Supports buffering for non-extended length APDU.
+	 * @param buffer Buffer that holds the data.
+	 * @param offset Offset that the data starts.
+	 * @param len Length available.
+	 * @param keyType Type of key. Must be consistent between imports.
+	 * @throws ISOException {@link ISO7816#SW_CONDITIONS_NOT_SATISFIED ISO7816.SW_CONDITIONS_NOT_SATISFIED} when switching type between imports.
+	 * @return Length consumed.
+	 */
+	private short putKeyObject(final byte[] buffer, short offset, short len, short keyType) throws ISOException {
 		short actual;
 
 		// Determine bounds based on object type
@@ -215,6 +210,7 @@ public class JediIdentity {
 
 	/**
 	 * Generates controller-unique RSA keypair.
+	 * @throws ISOException
 	 */
 	public void genKeyPair() throws ISOException {
 		KeyPair kp = null;
@@ -234,23 +230,58 @@ public class JediIdentity {
 		kp.genKeyPair();
 	}
 
-	public short putPrivateKeyP(final byte[] buffer, short offset, short len) {
+	/**
+	 * Import private factor P.
+	 * @param buffer Buffer that holds the data.
+	 * @param offset Offset that the data starts.
+	 * @param len Length available.
+	 * @return Length consumed.
+	 */
+	public short putPrivateKeyP(final byte[] buffer, short offset, short len) throws ISOException {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PRIV_P);
 	}
-	
-	public short putPrivateKeyQ(final byte[] buffer, short offset, short len) {
+
+	/**
+	 * Import private factor Q.
+	 * @param buffer Buffer that holds the data.
+	 * @param offset Offset that the data starts.
+	 * @param len Length available.
+	 * @return Length consumed.
+	 */
+	public short putPrivateKeyQ(final byte[] buffer, short offset, short len) throws ISOException {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PRIV_Q);
 	}
 
-	public short putPrivateKeyPQ(final byte[] buffer, short offset, short len) {
+	/**
+	 * Import private factor PQ.
+	 * @param buffer Buffer that holds the data.
+	 * @param offset Offset that the data starts.
+	 * @param len Length available.
+	 * @return Length consumed.
+	 */
+	public short putPrivateKeyPQ(final byte[] buffer, short offset, short len) throws ISOException {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PRIV_PQ);
 	}
 
-	public short putPrivateKeyDP1(final byte[] buffer, short offset, short len) {
+	/**
+	 * Import private factor DP1.
+	 * @param buffer Buffer that holds the data.
+	 * @param offset Offset that the data starts.
+	 * @param len Length available.
+	 * @return Length consumed.
+	 */
+	public short putPrivateKeyDP1(final byte[] buffer, short offset, short len) throws ISOException {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PRIV_DP1);
 	}
 
-	public short putPrivateKeyDQ1(final byte[] buffer, short offset, short len) {
+	/**
+	 * Import private factor DQ1.
+	 * @param buffer Buffer that holds the data.
+	 * @param offset Offset that the data starts.
+	 * @param len Length available.
+	 * @return Length consumed.
+	 */
+	public short putPrivateKeyDQ1(final byte[] buffer, short offset, short len) throws ISOException {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PRIV_DQ1);
 	}
 	
@@ -264,7 +295,7 @@ public class JediIdentity {
 	 * @param len Number of bytes to copy.
 	 * @return Number of bytes copied.
 	 */
-	public short putSerialNumber(final byte[] buffer, short boffset, short len) {
+	public short putSerialNumber(final byte[] buffer, short boffset, short len) throws ISOException {
 		short sz;
 		if (len != this.serialNumber.length) {
 			ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
@@ -278,20 +309,20 @@ public class JediIdentity {
 		return this.serialNumber;
 	}
 
-	public short putPublicKeyN(final byte[] buffer, short offset, short len) {
+	public short putPublicKeyN(final byte[] buffer, short offset, short len) throws ISOException {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PUB_N);
 	}
 
-	public short putPublicKeyE(final byte[] buffer, short offset, short len) {
+	public short putPublicKeyE(final byte[] buffer, short offset, short len) throws ISOException {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PUB_E);
 	}
 	
-	public short putPublicKeyEDirect(final byte[] buffer, short offset, short len) {
+	public short putPublicKeyEDirect(final byte[] buffer, short offset, short len) throws ISOException {
 		this.cukPub.setExponent(buffer, offset, len);
 		return len;
 	}
 
-	public short putIdSig(final byte[] buffer, short offset, short len) {
+	public short putIdSig(final byte[] buffer, short offset, short len) throws ISOException {
 		return this.putKeyObject(buffer, offset, len, KEY_TYPE_PUB_SIG);
 	}
 
