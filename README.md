@@ -32,7 +32,7 @@ In short, devices that work and are tested:
 
 Devices that might work but are untested:
 
-- J3D081 from [SmartcardFocus](https://www.smartcardfocus.com/shop/ilp/id~688/j3d081-80k/p/index.shtml)
+- J3D081 from ~~[SmartcardFocus](https://www.smartcardfocus.com/shop/ilp/id~688/j3d081-80k/p/index.shtml)~~ (No longer available on SmartcardFocus)
 - J2D081 (SIM cut) from Aliexpress (if properly pre-personalized which they don't always do. Always ask!) or [Futako (T=0)](https://www.javacardsdk.com/product/j2d081simt0/)
 - [Fidesmo Card v1.0](https://shop.fidesmo.com/products/fidesmo-card) (J3D145 NFC only) and [Fidesmo Card v2.0](https://shop.fidesmo.com/products/fidesmo-card-2-0) (J3H145 NFC only)
 - NXP A710xCG (e.g. on [Digi-key](https://www.digikey.com/en/products/detail/nxp-usa-inc/A7101CGTK2-T0B040X/7645426))
