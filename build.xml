@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project name="IllegalSecurityChip" basedir="." default="capfile">
   <description>Applet that emulates a certain secure element</description>
+  <get src="https://github.com/martinpaljak/ant-javacard/releases/download/v21.12.31/ant-javacard.jar" dest="ext" skipexisting="true"/>
   <target name="capfile" description="Build cap file">
     <tstamp/>
-    <ant dir="ext/ant-javacard"/>
-    <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="ext/ant-javacard/ant-javacard.jar"/>
+    <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="ext/ant-javacard.jar"/>
     <javacard>
       <cap jckit="ext/ant-javacard/sdks/jc303_kit" aid="f50111e9a15ec4" output="IllegalSecurityChip.cap" sources="src" version="1.1">
         <applet class="illegal.security.chip.ISCApplet" aid="f50111e9a15ec400"/>

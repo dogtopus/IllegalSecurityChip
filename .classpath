@@ -2,7 +2,7 @@
 <classpath>
 	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER"/>
 	<classpathentry kind="src" path="src"/>
-	<classpathentry kind="lib" path="ext/ant-javacard/sdks/jc303_kit/lib/api_classic.jar"/>
-	<classpathentry kind="lib" path="ext/ant-javacard/sdks/jc303_kit/lib/api_connected.jar"/>
+	<classpathentry kind="lib" path="ext/sdks/jc303_kit/lib/api_classic.jar"/>
+	<classpathentry kind="lib" path="ext/sdks/jc303_kit/lib/api_connected.jar"/>
 	<classpathentry kind="output" path="bin"/>
 </classpath>
