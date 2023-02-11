@@ -6,7 +6,7 @@
     <tstamp/>
     <taskdef name="javacard" classname="pro.javacard.ant.JavaCard" classpath="ext/ant-javacard.jar"/>
     <javacard>
-      <cap jckit="ext/sdks/jc303_kit" aid="f50111e9a15ec4" output="IllegalSecurityChip.cap" sources="src" version="1.1">
+      <cap jckit="ext/sdks/jc303_kit" aid="f50111e9a15ec4" output="IllegalSecurityChip.cap" sources="src/main/javacard" version="1.1">
         <applet class="illegal.security.chip.ISCApplet" aid="f50111e9a15ec400"/>
       </cap>
     </javacard>
